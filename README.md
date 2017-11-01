@@ -5,3 +5,19 @@ Assumes:
 ```
 $ createdb example
 ```
+
+(or modify the resources/application.conf for your database).
+
+Run:
+
+```
+$ sbt
+sbt> run
+```
+
+NB: as of 1 Nov, with Java 8 launch sbt as:
+
+```
+$ sbt -Djava.specification.version=9.1
+```
+
