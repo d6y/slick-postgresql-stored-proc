@@ -30,14 +30,19 @@ object Example extends App {
 
   lazy val messages = TableQuery[MessageTable]
 
-  // Create the schema and populate it with data (once)
-  val initDb = 
-    messages.schema.create.asTry >> (
-      messages.length.result flatMap {
-        case 0 => messages ++= freshTestData
-        case _ => DBIO.successful(0)
-      }
-    )
+
+  val populateOnce = 
+    messages.length.result flatMap {
+      case 0 => messages ++= freshTestData
+      case _ => DBIO.successful(0)
+    }
+
+  lazy val initDb = 
+    messages.schema.create.asTry andThen 
+    populateOnce                 andThen
+    createSelectProc             andThen
+    createInsertProc
+
 
   // Set up a few stored functions...
 
@@ -75,12 +80,12 @@ object Example extends App {
     $$$$ LANGUAGE plpgsql;
     """
 
+  val db = Database.forConfig("example")
+  
   // Plain SQL example...
 
-  val program = for {
+  val plainProgram = for {
     _     <- initDb
-    _     <- createSelectProc
-    _     <- createInsertProc
     // Example procedure call which returns a value:
     name = "Dave"
     count <- sql"""select numMessages($name)""".as[Int]
@@ -89,10 +94,25 @@ object Example extends App {
      _    <- sql"""select systemMessage($msg)""".as[String] // String? See comment above on the proc definition
   } yield count
 
-  val db = Database.forConfig("example")
-  try
-    Await.result(db.run(program), 2.seconds).foreach(println)
-  finally
-    db.close
+
+  // Run the program. Should print out the number of rows from Dave (3):
+  Await.result(db.run(plainProgram), 2.seconds).foreach(println)
+
+  // Lifted embedded example...
+
+  val numMessages = SimpleFunction.unary[String, Int]("numMessages")
+  val leProgram = for {
+    _     <- initDb
+    name  = "HAL"
+    count <- numMessages(name).result
+  } yield count
+
+  // Run the program. Should print out HAL message count (2):
+  println(
+    Await.result(db.run(leProgram), 2.seconds)
+  )
+
+
+  db.close
 
 }
